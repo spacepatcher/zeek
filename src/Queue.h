@@ -57,54 +57,40 @@ protected:
 	int tail;	// just beyond the end of the queue in the ring
 	};
 
-// Queue.h -- interface for class Queue
-//	Use:	to get a list of pointers to class foo you should:
-//		1) declare(PQueue,foo); (declare interest in lists of foo*'s)
-//		2) variables are declared like:
-//			PQueue(foo) bar; (bar is of type list of foo*'s)
+template<typename T>
+class Queue : public BaseQueue
+	{
+public:
+	Queue() : BaseQueue(0) {}
+	explicit Queue(int sz) : BaseQueue(sz) {}
 
-// For queues of "type"
-#define Queue(type) type ## Queue
+	void push_front(T a) { BaseQueue::push_front(ent(a)); }
+	void push_back(T a) { BaseQueue::push_back(ent(a)); }
+	T pop_front() { return T(BaseQueue::pop_front()); }
+	T pop_back() { return T(BaseQueue::pop_back()); }
 
-// For queues of pointers to "type"
-#define PQueue(type) type ## PQueue
+	T operator[](int i) const { return T(BaseQueue::operator[](i)); }
+	};
 
-#define Queuedeclare(type)						\
-struct Queue(type) : BaseQueue						\
-	{								\
-	Queue(type)() : BaseQueue(0) {}					\
-	explicit Queue(type)(int sz) : BaseQueue(sz) {}				\
-									\
-	void push_front(type a)	{ BaseQueue::push_front(ent(a)); }	\
-	void push_back(type a)	{ BaseQueue::push_back(ent(a)); }	\
-	type pop_front()	{ return type(BaseQueue::pop_front()); }\
-	type pop_back()		{ return type(BaseQueue::pop_back()); }	\
-									\
-	type operator[](int i) const					\
-		{ return type(BaseQueue::operator[](i)); }		\
-	};								\
+template<typename T>
+class PQueue : public BaseQueue
+	{
+public:
+	PQueue() : BaseQueue(0) {}
+	explicit PQueue(int sz) : BaseQueue(sz) {}
 
-#define PQueuedeclare(type)						\
-struct PQueue(type) : BaseQueue						\
-	{								\
-	PQueue(type)() : BaseQueue(0) {}				\
-	explicit PQueue(type)(int sz) : BaseQueue(sz) {}				\
-									\
-	void push_front(type* a){ BaseQueue::push_front(ent(a)); }	\
-	void push_back(type* a)	{ BaseQueue::push_back(ent(a)); }	\
-	type* pop_front()						\
-		{ return (type*)BaseQueue::pop_front(); }		\
-	type* pop_back()							\
-		{ return (type*)BaseQueue::pop_back(); }			\
-									\
-	type* operator[](int i) const					\
-		{ return (type*)BaseQueue::operator[](i); }		\
-	};								\
+	void push_front(T* a) { BaseQueue::push_front(ent(a)); }
+	void push_back(T* a) { BaseQueue::push_back(ent(a)); }
+	T* pop_front() { return (T*)BaseQueue::pop_front(); }
+	T* pop_back() { return (T*)BaseQueue::pop_back(); }
+
+	T* operator[](int i) const { return (T*)BaseQueue::operator[](i); }
+	};
 
 // Macro to visit each queue element in turn.
-#define loop_over_queue(queue, iterator)				\
-	int iterator;							\
-	for ( iterator = (queue).front(); iterator != (queue).back();	\
-		(queue).incr(iterator) )				\
+#define loop_over_queue(queue, iterator) \
+	int iterator; \
+	for ( iterator = (queue).front(); iterator != (queue).back(); \
+		(queue).incr(iterator) )
 
 #endif /* queue_h */

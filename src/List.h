@@ -111,114 +111,85 @@ protected:
 	};
 
 
-// List.h -- interface for class List
-//	Use:	to get a list of pointers to class foo you should:
-//		1) typedef foo* Pfoo; (the macros don't like explicit pointers)
-//		2) declare(List,Pfoo); (declare an interest in lists of Pfoo's)
-//		3) variables are declared like:
-//				List(Pfoo) bar;	(bar is of type list of Pfoo's)
+template<typename T>
+class List : public BaseList
+	{
+public:
+	explicit List(T e1 ...) : BaseList()
+		{
+		append(e1);
+		va_list ap;
+		va_start(ap,e1);
+		for ( T e = va_arg(ap,T); e != 0; e = va_arg(ap,T) )
+			append(e);
+		resize();
+		}
 
-// For lists of "type".
+	List() : BaseList(0) {}
+	explicit List(int sz) : BaseList(sz) {}
+	List(const List& l) : BaseList(l) {}
+	List(List&& l) : BaseList(std::move(l)) {}
 
-#define List(type) type ## List
+	List& operator=(const List& l) { return (List&) BaseList::operator=(l); }
+	List& operator=(List&& l) { return (List&) BaseList::operator=(std::move(l)); }
+	T operator[](int i) const { return T(BaseList::operator[](i)); }
 
-// For lists of pointers to "type"
-#define PList(type) type ## PList
+	void insert(T a)	{ BaseList::insert(ent(a)); }
+	void sortedinsert(T a, list_cmp_func cmp_func) { BaseList::sortedinsert(ent(a), cmp_func); }
+	void append(T a)	{ BaseList::append(ent(a)); }
+	T remove(T a) { return T(BaseList::remove(ent(a))); }
+	T remove_nth(int n)	{ return T(BaseList::remove_nth(n)); }
+	T get()	{ return T(BaseList::get()); }
+	T last() { return T(BaseList::last()); }
+	T replace(int i, T new_type) { return T(BaseList::replace(i,ent(new_type))); }
+	T is_member(T e) const { return T(BaseList::is_member(ent(e))); }
+	int member_pos(T e) const { return BaseList::member_pos(ent(e)); }
+	};
 
-#define Listdeclare(type)						\
-struct List(type) : BaseList						\
-	{								\
-	explicit List(type)(type ...);						\
-	List(type)() : BaseList(0) {}					\
-	explicit List(type)(int sz) : BaseList(sz) {}				\
-	List(type)(const List(type)& l) : BaseList(l) {}		\
-	List(type)(List(type)&& l) : BaseList(std::move(l)) {}		\
-									\
-	List(type)& operator=(const List(type)& l)					\
-		{ return (List(type)&) BaseList::operator=(l); }			\
-	List(type)& operator=(List(type)&& l)					\
-		{ return (List(type)&) BaseList::operator=(std::move(l)); }			\
-	void insert(type a)	{ BaseList::insert(ent(a)); }		\
-	void sortedinsert(type a, list_cmp_func cmp_func)		\
-		{ BaseList::sortedinsert(ent(a), cmp_func); }		\
-	void append(type a)	{ BaseList::append(ent(a)); }		\
-	type remove(type a)						\
-			{ return type(BaseList::remove(ent(a))); }	\
-	type remove_nth(int n)	{ return type(BaseList::remove_nth(n)); }\
-	type get()		{ return type(BaseList::get()); }	\
-	type last()		{ return type(BaseList::last()); }	\
-	type replace(int i, type new_type)				\
-		{ return type(BaseList::replace(i,ent(new_type))); }	\
-	type is_member(type e) const					\
-		{ return type(BaseList::is_member(ent(e))); }		\
-	int member_pos(type e) const					\
-		{ return BaseList::member_pos(ent(e)); }		\
-									\
-	type operator[](int i) const					\
-		{ return type(BaseList::operator[](i)); }		\
-	};								\
+template<typename T>
+class PList : public BaseList
+	{
+public:
+	explicit PList(T* e1 ...) : BaseList()
+		{
+		append(e1);
+		va_list ap;
+		va_start(ap,e1);
+		for ( T* e = va_arg(ap,T*); e != 0; e = va_arg(ap,T*) )
+			append(e);
+		resize();
+		}
+	
+	PList() : BaseList(0) {}
+	explicit PList(int sz) : BaseList(sz) {}
+	PList(const PList& l) : BaseList(l) {}
+	PList(PList&& l) : BaseList(std::move(l)) {}
+	PList(std::initializer_list<T*> il) : BaseList((const ent*)il.begin(), il.size()) {}
 
-#define Listimplement(type)						\
-List(type)::List(type)(type e1 ...) : BaseList()			\
-	{								\
-	append(e1);							\
-	va_list ap;							\
-	va_start(ap,e1);						\
-	for ( type e = va_arg(ap,type); e != 0; e = va_arg(ap,type) )	\
-		append(e);						\
-	resize();							\
-	}
-
-#define PListdeclare(type)						\
-struct PList(type) : BaseList						\
-	{								\
-	explicit PList(type)(type* ...);						\
-	PList(type)() : BaseList(0) {}					\
-	explicit PList(type)(int sz) : BaseList(sz) {}				\
-	PList(type)(const PList(type)& l) : BaseList(l) {}		\
-	PList(type)(PList(type)&& l) : BaseList(std::move(l)) {}		\
-	PList(type)(std::initializer_list<type*> il) : BaseList((const ent*)il.begin(), il.size()) {}		\
-									\
-	PList(type)& operator=(const PList(type)& l)					\
-		{ return (PList(type)&) BaseList::operator=(l); }			\
-	PList(type)& operator=(PList(type)&& l)					\
-		{ return (PList(type)&) BaseList::operator=(std::move(l)); }			\
-	void insert(type* a)	{ BaseList::insert(ent(a)); }		\
-	void sortedinsert(type* a, list_cmp_func cmp_func)		\
-		{ BaseList::sortedinsert(ent(a), cmp_func); }		\
-	void append(type* a)	{ BaseList::append(ent(a)); }		\
-	type* remove(type* a)						\
-		{ return (type*)BaseList::remove(ent(a)); }		\
-	type* remove_nth(int n)	{ return (type*)(BaseList::remove_nth(n)); }\
-	type* get()		{ return (type*)BaseList::get(); }	\
-	type* operator[](int i) const					\
-		{ return (type*)(BaseList::operator[](i)); }		\
-	type* replace(int i, type* new_type)				\
-		{ return (type*)BaseList::replace(i,ent(new_type)); }	\
-	type* is_member(type* e)					\
-		{ return (type*)BaseList::is_member(ent(e)); }		\
-	int member_pos(type* e)						\
-		{ return BaseList::member_pos(ent(e)); }		\
-	};								\
-
-#define PListimplement(type)						\
-PList(type)::PList(type)(type* ep1 ...) : BaseList()			\
-	{								\
-	append(ep1);							\
-	va_list ap;							\
-	va_start(ap,ep1);						\
-	for ( type* ep = va_arg(ap,type*); ep != 0;			\
-	      ep = va_arg(ap,type*) )					\
-		append(ep);						\
-	resize();							\
-	}
-
-
-#define declare(metatype,type) metatype ## declare (type)
+	PList& operator=(const PList& l)
+		{ return (PList&) BaseList::operator=(l); }
+	PList& operator=(PList&& l)
+		{ return (PList&) BaseList::operator=(std::move(l)); }
+	void insert(T* a)	{ BaseList::insert(ent(a)); }
+	void sortedinsert(T* a, list_cmp_func cmp_func)
+		{ BaseList::sortedinsert(ent(a), cmp_func); }
+	void append(T* a)	{ BaseList::append(ent(a)); }
+	T* remove(T* a)
+		{ return (T*)BaseList::remove(ent(a)); }
+	T* remove_nth(int n)	{ return (T*)(BaseList::remove_nth(n)); }
+	T* get()		{ return (T*)BaseList::get(); }
+	T* operator[](int i) const
+		{ return (T*)(BaseList::operator[](i)); }
+	T* replace(int i, T* new_type)
+		{ return (T*)BaseList::replace(i,ent(new_type)); }
+	T* is_member(T* e)
+		{ return (T*)BaseList::is_member(ent(e)); }
+	int member_pos(T* e)
+		{ return BaseList::member_pos(ent(e)); }
+	};
 
 // Popular type of list: list of strings.
-declare(PList,char);
-typedef PList(char) name_list;
+typedef PList<char> name_list;
 
 // Macro to visit each list element in turn.
 #define loop_over_list(list, iterator)  \

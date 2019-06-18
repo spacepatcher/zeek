@@ -40,7 +40,6 @@ enum MIME_EVENT_TYPE {
 };
 
 
-
 // MIME data structures.
 
 class MIME_Multiline;
@@ -84,7 +83,6 @@ protected:
 };
 
 
-// declare(PList, MIME_Header);
 typedef vector<MIME_Header*> MIME_HeaderList;
 
 class MIME_Entity {

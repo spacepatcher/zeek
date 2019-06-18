@@ -460,8 +460,7 @@ public:
 	const char* id;
 };
 
-declare(PList,TypeDecl);
-typedef PList(TypeDecl) type_decl_list;
+typedef PList<TypeDecl> type_decl_list;
 
 class RecordType : public BroType {
 public:

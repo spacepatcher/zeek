@@ -36,8 +36,6 @@
 // We err on the safe side.
 #define MAXOPT 64
 
-declare(PDict,int);
-
 struct os_type {
 	const char* os;
 	char* desc;
@@ -124,7 +122,7 @@ private:
 #define OSHSIZE 16
 	struct fp_entry* bh[OSHSIZE];
 
-	PDict(int) os_matches;
+	PDict<int> os_matches;
 };
 
 #define SIGHASH(tsize, optcnt, q, df) \
