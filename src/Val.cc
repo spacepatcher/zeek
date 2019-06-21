@@ -27,6 +27,9 @@
 
 #include "broker/Data.h"
 
+#include "3rdparty/json.hpp"
+using nlohmann::json;
+
 Val::Val(Func* f)
 	{
 	val.func_val = f;
@@ -444,7 +447,182 @@ TableVal* Val::GetRecordFields()
 		}
 
 	return fields;
+	}
 
+// This is a static method in this file to avoid including json.hpp in Val.h since it's huge.
+static nlohmann::json BuildJSON(Val* val, bool only_loggable=false, RE_Matcher* re=new RE_Matcher("^_"))
+	{
+	json j;
+	BroType* type = val->Type();
+	switch (type->Tag())
+		{
+		case TYPE_BOOL:
+			j = val->AsBool();
+			break;
+
+		case TYPE_INT:
+			j = val->AsInt();
+			break;
+
+		case TYPE_COUNT:
+			j = val->AsCount();
+			break;
+
+		case TYPE_COUNTER:
+			j = val->AsCounter();
+			break;
+
+		case TYPE_TIME:
+			j = val->AsTime();
+			break;
+
+		case TYPE_DOUBLE:
+			j = val->AsDouble();
+			break;
+
+		case TYPE_PORT:
+			{
+			auto* pval = val->AsPortVal();
+			j["port"] = pval->Port();
+			j["proto"] = pval->Protocol();
+			break;
+			}
+
+		case TYPE_INTERVAL:
+		case TYPE_ENUM:
+		case TYPE_STRING:
+		case TYPE_ADDR:
+		case TYPE_SUBNET:
+			{
+			ODesc d;
+			d.SetStyle(RAW_STYLE);
+			val->Describe(&d);
+
+			auto* bs = new BroString(1, d.TakeBytes(), d.Len());
+			j = string((char*)bs->Bytes(), bs->Len());
+			delete bs;
+			break;
+			}
+
+		case TYPE_TABLE:
+			{
+			auto* table = val->AsTable();
+			auto* tval = val->AsTableVal();
+
+			if ( tval->IsSet() )
+				j = json::array();
+			else
+				j = json::object();
+
+			HashKey* k;
+			auto c = table->InitForIteration();
+			while ( table->NextEntry(k, c) )
+				{
+				auto lv = tval->RecoverIndex(k);
+				delete k;
+
+				if ( tval->IsSet() )
+					{
+					auto* value = lv->Index(0)->Ref();
+					j.push_back(BuildJSON(value, only_loggable, re));
+					Unref(value);
+					}
+				else
+					{
+					json key_json;
+					Val* entry_value;
+					if ( lv->Length() == 1 )
+						{
+						Val* entry_key = lv->Index(0)->Ref();
+						entry_value = tval->Lookup(entry_key, true);
+						key_json = BuildJSON(entry_key, only_loggable, re);
+						Unref(entry_key);
+						}
+					else
+						{
+						entry_value = tval->Lookup(lv, true);
+						key_json = BuildJSON(lv, only_loggable, re);
+						}
+
+					string key_string;
+					if ( key_json.is_string() )
+						key_string = key_json;
+					else
+						key_string = key_json.dump();
+
+					j[key_string] = BuildJSON(entry_value, only_loggable, re);
+					}
+
+				Unref(lv);
+				}
+
+			break;
+			}
+		case TYPE_RECORD:
+			{
+			j = json::object();
+			auto* rval = val->AsRecordVal();
+			TableVal* fields = rval->GetRecordFields();
+			auto* field_indexes = fields->ConvertToPureList();
+
+			for ( int i = 0; i < field_indexes->Length(); ++i )
+				{
+				Val* key = field_indexes->Index(i);
+				auto* key_field = fields->Lookup(key)->AsRecordVal();
+
+				auto* key_val = key->AsStringVal();
+				string key_string;
+				if ( re->MatchAnywhere(key_val->AsString()) != 0 )
+					{
+					key_val = key_val->Substitute(re, new StringVal(""), 0)->AsStringVal();
+					key_string = key_val->ToStdString();
+					delete key_val;
+					}
+				else
+					key_string = key_val->ToStdString();
+
+				Val* value = key_field->Lookup("value", true);
+
+				if ( value && ( ! only_loggable || key_field->Lookup("log")->AsBool() ) )
+					j[key_string] = BuildJSON(value, only_loggable, re);
+				}
+
+			delete fields;
+			break;
+			}
+		case TYPE_LIST:
+			{
+			j = json::array();
+			auto* lval = val->AsListVal();
+			size_t size = lval->Length();
+			for (size_t i = 0; i < size; i++)
+				{
+				j.push_back(BuildJSON(lval->Index(i), only_loggable, re));
+				}
+			break;
+			}
+		case TYPE_VECTOR:
+			{
+			j = json::array();
+			auto* vval = val->AsVectorVal();
+			size_t size = vval->SizeVal()->AsCount();
+			for (size_t i = 0; i < size; i++)
+				{
+				j.push_back(BuildJSON(vval->Lookup(i), only_loggable, re));
+				}
+			break;
+			}
+
+		default: break;
+		}
+
+	return j;
+	}
+
+StringVal* Val::ToJSON(bool only_loggable, RE_Matcher* re)
+	{
+	json j = BuildJSON(this, only_loggable, re);
+	return new StringVal(j.dump());
 	}
 
 IntervalVal::IntervalVal(double quantity, double units) :
@@ -558,6 +736,18 @@ uint32 PortVal::Port() const
 	return p & ~PORT_SPACE_MASK;
 	}
 
+string PortVal::Protocol() const
+	{
+	if ( IsUDP() )
+		return "udp";
+	else if ( IsTCP() )
+		return "tcp";
+	else if ( IsICMP() )
+		return "icmp";
+	else
+		return "unknown";
+	}
+
 int PortVal::IsTCP() const
 	{
 	return (val.uint_val & PORT_SPACE_MASK) == TCP_PORT_MASK;
@@ -577,14 +767,8 @@ void PortVal::ValDescribe(ODesc* d) const
 	{
 	uint32 p = static_cast<uint32>(val.uint_val);
 	d->Add(p & ~PORT_SPACE_MASK);
-	if ( IsUDP() )
-		d->Add("/udp");
-	else if ( IsTCP() )
-		d->Add("/tcp");
-	else if ( IsICMP() )
-		d->Add("/icmp");
-	else
-		d->Add("/unknown");
+	d->Add("/");
+	d->Add(Protocol());
 	}
 
 Val* PortVal::DoClone(CloneState* state)
