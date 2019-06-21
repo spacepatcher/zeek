@@ -290,7 +290,6 @@ set(bro_SRCS
     PolicyFile.cc
     PrefixTable.cc
     PriorityQueue.cc
-    Queue.cc
     RandTest.cc
     RE.cc
     Reassem.cc
