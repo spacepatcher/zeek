@@ -25,60 +25,262 @@
 #include <stdarg.h>
 #include "util.h"
 
-typedef void* ent;
+#define DEFAULT_LIST_SIZE 10
+#define LIST_GROWTH_FACTOR 2
+
 typedef int (*list_cmp_func)(const void* v1, const void* v2);
 
+template<typename T>
 class BaseList {
 public:
-	void clear();		// remove all entries
+	void clear()		// remove all entries
+		{
+		free(entries);
+		entries = nullptr;
+		num_entries = max_entries = 0;
+		}
+
 	int length() const	{ return num_entries; }
 	int max() const		{ return max_entries; }
-	int resize(int = 0);	// 0 => size to fit current number of entries
+	int resize(int new_size = 0)	// 0 => size to fit current number of entries
+		{
+		if ( new_size < num_entries )
+			new_size = num_entries;	// do not lose any entries
 
-	void sort(list_cmp_func cmp_func);
+		if ( new_size != max_entries )
+			{
+			entries = (T*) safe_realloc((void*) entries, sizeof(T) * new_size);
+			if ( entries )
+				max_entries = new_size;
+			else
+				max_entries = 0;
+			}
+
+		return max_entries;
+		}
+
+	void sort(list_cmp_func cmp_func)
+		{
+		qsort(entries, num_entries, sizeof(T), cmp_func);
+		}
 
 	int MemoryAllocation() const
-		{ return padded_sizeof(*this) + pad_size(max_entries * sizeof(ent)); }
+		{ return padded_sizeof(*this) + pad_size(max_entries * sizeof(T)); }
 
 protected:
-	~BaseList()		{ free(entry); }
-	explicit BaseList(int = 0);
-	BaseList(const BaseList&);
-	BaseList(BaseList&&);
-	BaseList(const ent* arr, int n);
+	~BaseList()		{ free(entries); }
+	explicit BaseList(int size= 0)
+		{
+		num_entries = 0;
 
-	BaseList& operator=(const BaseList&);
-	BaseList& operator=(BaseList&&);
+		if ( size <= 0 )
+			{
+			max_entries = 0;
+			entries = nullptr;
+			return;
+			}
 
-	void insert(ent);	// add at head of list
+		max_entries = size;
+
+		entries = (T*) safe_malloc(max_entries * sizeof(T));
+		}
+
+	BaseList(const BaseList& b)
+		{
+		max_entries = b.max_entries;
+		num_entries = b.num_entries;
+
+		if ( max_entries )
+			entries = (T*) safe_malloc(max_entries * sizeof(T));
+		else
+			entries = nullptr;
+
+		for ( int i = 0; i < num_entries; ++i )
+			entries[i] = b.entries[i];
+		}
+
+	BaseList(BaseList&& b)
+		{
+		entries = b.entries;
+		num_entries = b.num_entries;
+		max_entries = b.max_entries;
+
+		b.entries = nullptr;
+		b.num_entries = b.max_entries = 0;
+		}
+
+	BaseList(const T* arr, int n)
+		{
+		num_entries = max_entries = n;
+		entries = (T*) safe_malloc(max_entries * sizeof(T));
+		memcpy(entries, arr, n * sizeof(T));
+		}
+
+	BaseList& operator=(const BaseList& b)
+		{
+		if ( this == &b )
+			return *this;
+
+		free(entries);
+
+		max_entries = b.max_entries;
+		num_entries = b.num_entries;
+
+		if ( max_entries )
+			entries = (T *) safe_malloc(max_entries * sizeof(T));
+		else
+			entries = nullptr;
+
+		for ( int i = 0; i < num_entries; ++i )
+			entries[i] = b.entries[i];
+
+		return *this;
+		}
+
+	BaseList& operator=(BaseList&& b)
+		{
+		if ( this == &b )
+			return *this;
+
+		free(entries);
+		entries = b.entries;
+		num_entries = b.num_entries;
+		max_entries = b.max_entries;
+
+		b.entries = nullptr;
+		b.num_entries = b.max_entries = 0;
+		return *this;
+		}
+
+	void insert(T a)	// add at head of list
+		{
+		if ( num_entries == max_entries )
+			resize(max_entries ? max_entries * LIST_GROWTH_FACTOR : DEFAULT_LIST_SIZE);
+
+		for ( int i = num_entries; i > 0; --i )
+			entries[i] = entries[i-1];	// move all pointers up one
+
+		++num_entries;
+		entries[0] = a;
+		}
 
 	// Assumes that the list is sorted and inserts at correct position.
-	void sortedinsert(ent, list_cmp_func cmp_func);
+	void sortedinsert(T a, list_cmp_func cmp_func)
+		{
+		// We optimize for the case that the new element is
+		// larger than most of the current entries.
 
-	void append(ent);	// add to end of list
-	ent remove(ent);	// delete entry from list
-	ent remove_nth(int);	// delete nth entry from list
-	ent get();		// return and remove ent at end of list
-	ent last()		// return at end of list
-		{ return entry[num_entries-1]; }
+		// First append element.
+		if ( num_entries == max_entries )
+			resize(max_entries ? max_entries * LIST_GROWTH_FACTOR : DEFAULT_LIST_SIZE);
+
+		entries[num_entries++] = a;
+
+		// Then move it to the correct place.
+		T tmp;
+		for ( int i = num_entries - 1; i > 0; --i )
+			{
+			if ( cmp_func(entries[i],entries[i-1]) <= 0 )
+				break;
+
+			tmp = entries[i];
+			entries[i] = entries[i-1];
+			entries[i-1] = tmp;
+			}
+		}
+
+	void append(T a)	// add to end of list
+		{
+		if ( num_entries == max_entries )
+			resize(max_entries ? max_entries * LIST_GROWTH_FACTOR : DEFAULT_LIST_SIZE);
+
+		entries[num_entries++] = a;
+		}
+
+	T remove(T a)	// delete entry from list
+		{
+		int i;
+		for ( i = 0; i < num_entries && a != entries[i]; ++i )
+			;
+
+		return remove_nth(i);
+		}
+
+	T remove_nth(int n)	// delete nth entry from list
+		{
+		if ( n < 0 || n >= num_entries )
+			return 0;
+
+		T old_ent = entries[n];
+		--num_entries;
+
+		for ( ; n < num_entries; ++n )
+			entries[n] = entries[n+1];
+
+		entries[n] = nullptr;	// for debugging
+		return old_ent;
+		}
+
+	T get()		// return and remove ent at end of list
+		{
+		if ( num_entries == 0 )
+			return 0;
+
+		return entries[--num_entries];
+		}
+
+	T last()		// return at end of list
+		{ return entries[num_entries-1]; }
 
 	// Return 0 if ent is not in the list, ent otherwise.
-	ent is_member(ent) const;
+	bool is_member(T a) const
+		{
+		int pos = member_pos(a);
+		return pos != -1;
+		}
 
 	// Returns -1 if ent is not in the list, otherwise its position.
-	int member_pos(ent) const;
+	int member_pos(T e) const
+		{
+		int i;
+		for ( i = 0; i < length() && e != entries[i]; ++i )
+			;
 
-	ent replace(int, ent);	// replace entry #i with a new value
+		return (i == length()) ? -1 : i;
+		}
+
+	T replace(int ent_index, T new_ent)	// replace entry #i with a new value
+		{
+		if ( ent_index < 0 )
+			return 0;
+
+		T old_ent = nullptr;
+
+		if ( ent_index > num_entries - 1 )
+			{ // replacement beyond the end of the list
+			resize(ent_index + 1);
+
+			for ( int i = num_entries; i < max_entries; ++i )
+				entries[i] = nullptr;
+			num_entries = max_entries;
+			}
+		else
+			old_ent = entries[ent_index];
+
+		entries[ent_index] = new_ent;
+
+		return old_ent;
+		}
 
 	// Return nth ent of list (do not remove).
-	ent operator[](int i) const
+	T operator[](int i) const
 		{
 #ifdef SAFE_LISTS
 		if ( i < 0 || i > num_entries-1 )
 			return 0;
 		else
 #endif
-			return entry[i];
+			return entries[i];
 		}
 
 	// This could essentially be an std::vector if we wanted.  Some
@@ -105,87 +307,84 @@ protected:
 	//    advantage of realloc's ability to contract in-place, it would
 	//    allocate-and-copy.
 
-	ent* entry;
+	T* entries;
 	int max_entries;
 	int num_entries;
 	};
 
 
 template<typename T>
-class List : public BaseList
+class List : public BaseList<T>
 	{
 public:
-	explicit List(T e1 ...) : BaseList()
+	explicit List(T e1 ...) : BaseList<T>()
 		{
 		append(e1);
 		va_list ap;
 		va_start(ap,e1);
 		for ( T e = va_arg(ap,T); e != 0; e = va_arg(ap,T) )
 			append(e);
-		resize();
+		BaseList<T>::resize();
 		}
 
-	List() : BaseList(0) {}
-	explicit List(int sz) : BaseList(sz) {}
-	List(const List& l) : BaseList(l) {}
-	List(List&& l) : BaseList(std::move(l)) {}
+	List() : BaseList<T>(0) {}
+	explicit List(int sz) : BaseList<T>(sz) {}
+	List(const List& l) : BaseList<T>(l) {}
+	List(List&& l) : BaseList<T>(std::move(l)) {}
+	List(std::initializer_list<T> il) : BaseList<T>(il.begin(), il.size()) {}
 
-	List& operator=(const List& l) { return (List&) BaseList::operator=(l); }
-	List& operator=(List&& l) { return (List&) BaseList::operator=(std::move(l)); }
-	T operator[](int i) const { return T(BaseList::operator[](i)); }
+	List& operator=(const List& l) { return (List&) BaseList<T>::operator=(l); }
+	List& operator=(List&& l) { return (List&) BaseList<T>::operator=(std::move(l)); }
+	T operator[](int i) const { return BaseList<T>::operator[](i); }
 
-	void insert(T a)	{ BaseList::insert(ent(a)); }
-	void sortedinsert(T a, list_cmp_func cmp_func) { BaseList::sortedinsert(ent(a), cmp_func); }
-	void append(T a)	{ BaseList::append(ent(a)); }
-	T remove(T a) { return T(BaseList::remove(ent(a))); }
-	T remove_nth(int n)	{ return T(BaseList::remove_nth(n)); }
-	T get()	{ return T(BaseList::get()); }
-	T last() { return T(BaseList::last()); }
-	T replace(int i, T new_type) { return T(BaseList::replace(i,ent(new_type))); }
-	T is_member(T e) const { return T(BaseList::is_member(ent(e))); }
-	int member_pos(T e) const { return BaseList::member_pos(ent(e)); }
+	void insert(T a)	{ BaseList<T>::insert(a); }
+	void sortedinsert(T a, list_cmp_func cmp_func) { BaseList<T>::sortedinsert(a, cmp_func); }
+	void append(T a)	{ BaseList<T>::append(a); }
+	T remove(T a) { return BaseList<T>::remove(a); }
+	T remove_nth(int n)	{ return BaseList<T>::remove_nth(n); }
+	T get()	{ return BaseList<T>::get(); }
+	T last() { return BaseList<T>::last(); }
+	T replace(int i, T new_type) { return BaseList<T>::replace(i, new_type); }
+	bool is_member(T e) const { return BaseList<T>::is_member(e); }
+	int member_pos(T e) const { return BaseList<T>::member_pos(e); }
 	};
 
+
+// TODO: I think this could just inherit from List<T*> and be an empty class otherwise.
 template<typename T>
-class PList : public BaseList
+class PList : public BaseList<T*>
 	{
 public:
-	explicit PList(T* e1 ...) : BaseList()
+	explicit PList(T* e1 ...) : BaseList<T*>()
 		{
 		append(e1);
 		va_list ap;
 		va_start(ap,e1);
 		for ( T* e = va_arg(ap,T*); e != 0; e = va_arg(ap,T*) )
 			append(e);
-		resize();
+		BaseList<T>::resize();
 		}
-	
-	PList() : BaseList(0) {}
-	explicit PList(int sz) : BaseList(sz) {}
-	PList(const PList& l) : BaseList(l) {}
-	PList(PList&& l) : BaseList(std::move(l)) {}
-	PList(std::initializer_list<T*> il) : BaseList((const ent*)il.begin(), il.size()) {}
 
-	PList& operator=(const PList& l)
-		{ return (PList&) BaseList::operator=(l); }
-	PList& operator=(PList&& l)
-		{ return (PList&) BaseList::operator=(std::move(l)); }
-	void insert(T* a)	{ BaseList::insert(ent(a)); }
-	void sortedinsert(T* a, list_cmp_func cmp_func)
-		{ BaseList::sortedinsert(ent(a), cmp_func); }
-	void append(T* a)	{ BaseList::append(ent(a)); }
-	T* remove(T* a)
-		{ return (T*)BaseList::remove(ent(a)); }
-	T* remove_nth(int n)	{ return (T*)(BaseList::remove_nth(n)); }
-	T* get()		{ return (T*)BaseList::get(); }
-	T* operator[](int i) const
-		{ return (T*)(BaseList::operator[](i)); }
-	T* replace(int i, T* new_type)
-		{ return (T*)BaseList::replace(i,ent(new_type)); }
-	T* is_member(T* e)
-		{ return (T*)BaseList::is_member(ent(e)); }
-	int member_pos(T* e)
-		{ return BaseList::member_pos(ent(e)); }
+	PList() : BaseList<T*>(0) {}
+	explicit PList(int sz) : BaseList<T*>(sz) {}
+	PList(const PList& l) : BaseList<T*>(l) {}
+	PList(PList&& l) : BaseList<T*>(std::move(l)) {}
+	PList(std::initializer_list<T*> il) : BaseList<T*>(il.begin(), il.size()) {}
+
+	PList& operator=(const PList& l) { return (PList&) BaseList<T*>::operator=(l); }
+	PList& operator=(PList&& l) { return (PList&) BaseList<T*>::operator=(std::move(l)); }
+	T* operator[](int i) const { return BaseList<T*>::operator[](i); }
+
+	void insert(T* a) { BaseList<T*>::insert(a); }
+	void sortedinsert(T* a, list_cmp_func cmp_func) { BaseList<T*>::sortedinsert(a, cmp_func); }
+	void append(T* a) { BaseList<T*>::append(a); }
+	T* remove(T* a) { return BaseList<T*>::remove(a); }
+	T* remove_nth(int n) { return BaseList<T*>::remove_nth(n); }
+	T* get() { return BaseList<T*>::get(); }
+	T* last() { return BaseList<T*>::last(); }
+	T* replace(int i, T* new_type) { return BaseList<T*>::replace(i, new_type); }
+	bool is_member(T* e) { return BaseList<T*>::is_member(e); }
+	int member_pos(T* e) { return BaseList<T*>::member_pos(e); }
 	};
 
 // Popular type of list: list of strings.

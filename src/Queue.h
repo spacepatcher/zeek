@@ -23,6 +23,8 @@
 
 #include "List.h"
 
+typedef void* ent;
+
 class BaseQueue {
 public:
 	~BaseQueue()		{ delete[] entry; }
