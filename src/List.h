@@ -314,9 +314,68 @@ protected:
 
 
 template<typename T>
+class ListIterator
+	{
+	T* const entries;
+	int offset;
+	int num_entries;
+	T endptr; // let this get set to some random value on purpose
+public:
+	ListIterator(T* entries, int offset, int num_entries) :
+		entries(entries), offset(offset), num_entries(num_entries) {}
+	bool operator==(const ListIterator& rhs) { return entries == rhs.entries && offset == rhs.offset; }
+	bool operator!=(const ListIterator& rhs) { return entries != rhs.entries || offset != rhs.offset; }
+	ListIterator & operator++() { offset++; return *this; }
+	ListIterator operator++(int) { auto t = *this; offset++; return t; }
+	ListIterator & operator--() { offset--; return *this; }
+	ListIterator operator--(int) { auto t = *this; offset--; return t; }
+	std::ptrdiff_t operator-(ListIterator const& sibling) const { return offset - sibling.offset; }
+	ListIterator & operator+=(int amount) { offset += amount; return *this; }
+	ListIterator & operator-=(int amount) { offset -= amount; return *this; }
+	bool operator<(ListIterator const&sibling) const { return offset < sibling.offset;}
+	bool operator<=(ListIterator const&sibling) const { return offset <= sibling.offset; }
+	bool operator>(ListIterator const&sibling) const { return offset > sibling.offset; }
+	bool operator>=(ListIterator const&sibling) const { return offset >= sibling.offset; }
+	T operator[](int index) const
+		{
+		if (index < num_entries)
+			return entries[index];
+		else
+			return endptr;
+		}
+	T operator*() const
+		{
+		if ( offset < num_entries )
+			return entries[offset];
+		else
+			return endptr;
+		}
+	};
+
+namespace std {
+    template<typename T>
+    class iterator_traits<ListIterator<T> >
+    {
+    public:
+        using difference_type = std::ptrdiff_t;
+        using size_type = std::size_t;
+        using value_type = T;
+        using pointer = T;
+        using reference = T&;
+        using iterator_category = std::random_access_iterator_tag;
+    };
+}
+
+
+template<typename T>
 class List : public BaseList<T>
 	{
 public:
+	using iterator = ListIterator<T>;
+	using const_iterator = ListIterator<const T>;
+	using reverse_iterator = std::reverse_iterator<iterator>;
+	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
 	explicit List(T e1 ...) : BaseList<T>()
 		{
 		append(e1);
@@ -355,6 +414,11 @@ template<typename T>
 class PList : public BaseList<T*>
 	{
 public:
+	using iterator = ListIterator<T*>;
+	using const_iterator = ListIterator<const T*>;
+	using reverse_iterator = std::reverse_iterator<iterator>;
+	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
 	explicit PList(T* e1 ...) : BaseList<T*>()
 		{
 		append(e1);
