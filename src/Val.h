@@ -883,6 +883,7 @@ public:
 		{ return table_hash->ComputeHash(index, 1); }
 
 	notifier::Modifiable* Modifiable() override	{ return this; }
+	bool IsSet() const { return table_type->IsSet(); }
 
 protected:
 	friend class Val;
