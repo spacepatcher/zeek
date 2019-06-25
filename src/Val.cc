@@ -713,6 +713,12 @@ StringVal::StringVal(const string& s) : Val(TYPE_STRING)
 	val.string_val = new BroString(s.c_str());
 	}
 
+string StringVal::ToStdString() const
+	{
+	auto* bs = AsString();
+	return string((char*)bs->Bytes(), bs->Len());
+	}
+
 StringVal* StringVal::ToUpper()
 	{
 	val.string_val->ToUpper();
